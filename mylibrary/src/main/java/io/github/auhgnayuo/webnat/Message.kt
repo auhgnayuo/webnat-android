@@ -1,5 +1,6 @@
 package io.github.auhgnayuo.webnat
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -267,6 +268,35 @@ data class Message(
         // ==================== 序列化 ====================
         
         /**
+         * 将任意值转换为 JSONObject.put() 可接受的类型（JSONObject、JSONArray、基本类型或 JSONObject.NULL）。
+         */
+        private fun toJsonValue(value: Any?): Any? {
+            when (value) {
+                null -> return JSONObject.NULL
+                is JSONObject, is JSONArray -> return value
+                is Map<*, *> -> {
+                    val obj = JSONObject()
+                    for ((k, v) in value) {
+                        if (k != null && k.toString().isNotEmpty()) {
+                            obj.put(k.toString(), toJsonValue(v))
+                        }
+                    }
+                    return obj
+                }
+                is List<*>, is Array<*> -> {
+                    val arr = JSONArray()
+                    val list = if (value is List<*>) value else (value as Array<*>).toList()
+                    for (item in list) {
+                        arr.put(toJsonValue(item))
+                    }
+                    return arr
+                }
+                is Number, is Boolean, is String -> return value
+                else -> return value.toString()
+            }
+        }
+        
+        /**
          * 从 JSONObject 创建消息实例
          *
          * 从 JSONObject 格式（通常来自 JSON 反序列化）创建 `Message` 对象。
@@ -390,26 +420,26 @@ data class Message(
         
         open?.let {
             val openJson = JSONObject()
-            it.param?.let { param -> openJson.put("param", param) }
+            it.param?.let { param -> openJson.put("param", Companion.toJsonValue(param)) }
             json.put("open", openJson)
         }
         
         close?.let {
             val closeJson = JSONObject()
-            it.param?.let { param -> closeJson.put("param", param) }
+            it.param?.let { param -> closeJson.put("param", Companion.toJsonValue(param)) }
             json.put("close", closeJson)
         }
         
         raw?.let {
             val rawJson = JSONObject()
-            it.param?.let { param -> rawJson.put("param", param) }
+            it.param?.let { param -> rawJson.put("param", Companion.toJsonValue(param)) }
             json.put("raw", rawJson)
         }
         
         broadcast?.let {
             val broadcastJson = JSONObject()
             broadcastJson.put("name", it.name)
-            it.param?.let { param -> broadcastJson.put("param", param) }
+            it.param?.let { param -> broadcastJson.put("param", Companion.toJsonValue(param)) }
             json.put("broadcast", broadcastJson)
         }
         
@@ -417,22 +447,22 @@ data class Message(
             val invokeJson = JSONObject()
             invokeJson.put("id", it.id)
             invokeJson.put("method", it.method)
-            it.param?.let { param -> invokeJson.put("param", param) }
+            it.param?.let { param -> invokeJson.put("param", Companion.toJsonValue(param)) }
             json.put("invoke", invokeJson)
         }
         
         reply?.let {
             val replyJson = JSONObject()
             replyJson.put("id", it.id)
-            it.result?.let { result -> replyJson.put("result", result) }
-            it.error?.let { error -> replyJson.put("error", error) }
+            it.result?.let { result -> replyJson.put("result", Companion.toJsonValue(result)) }
+            it.error?.let { error -> replyJson.put("error", Companion.toJsonValue(error)) }
             json.put("reply", replyJson)
         }
         
         notify?.let {
             val notifyJson = JSONObject()
             notifyJson.put("id", it.id)
-            it.param?.let { param -> notifyJson.put("param", param) }
+            it.param?.let { param -> notifyJson.put("param", Companion.toJsonValue(param)) }
             json.put("notify", notifyJson)
         }
         
