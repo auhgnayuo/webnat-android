@@ -405,7 +405,8 @@ class Webnat private constructor(webView: WebView) {
                 
                 // 创建新的 Connection 实例
                 // 注入消息发送函数，封装了消息序列化和 JavaScript 执行逻辑
-                val connection = ConnectionImpl(from, attributesMap) { messageToSend ->
+                val currentUrl = webViewRef.get()?.url
+                val connection = ConnectionImpl(from, attributesMap, currentUrl) { messageToSend ->
                     try {
                         // 构造发送到 Web 端的消息数组
                         val jsonArray = JSONArray()

@@ -26,6 +26,11 @@ interface Connection {
      */
     val attributes: Map<String, Any>?
     
+    /**
+     * 当前连接的界面 URL，在连接建立时当前页面的地址
+     */
+    val url: String?
+    
     /** 连接是否已关闭 */
     val closed: Boolean
 }

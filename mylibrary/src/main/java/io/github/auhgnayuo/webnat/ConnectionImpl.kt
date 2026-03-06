@@ -10,6 +10,8 @@ internal class ConnectionImpl(
     override val id: String,
     /** 连接的元数据 */
     override val attributes: Map<String, Any>?,
+    /** 当前连接的界面 URL，在连接建立时当前页面的地址 */
+    override val url: String?,
     /** 消息发送函数，由创建 Connection 时注入，封装了实际的消息发送逻辑 */
     private val sendMessage: (Message) -> Unit
 ) : Connection {
