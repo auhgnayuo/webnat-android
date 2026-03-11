@@ -20,7 +20,7 @@ Webnat 是一个用于 Native (Android) 与 Web 之间通信的 Kotlin 库。支
 
 ```kotlin
 dependencies {
-    implementation("io.github.auhgnayuo:webnat:1.0.2")
+    implementation("io.github.auhgnayuo:webnat:1.0.3")
 }
 ```
 
