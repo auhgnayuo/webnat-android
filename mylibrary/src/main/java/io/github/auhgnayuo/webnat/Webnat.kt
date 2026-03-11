@@ -382,72 +382,51 @@ class Webnat private constructor(webView: WebView) {
     fun postMessage(messageText: String) {
         // 推迟下次心跳时间
         javaScriptAliveKeeper.delay()
-        
-        try {
-            // 解析 JSON 字符串
-            val json = JSONObject(messageText)
-            
-            // 从字典创建 Message 对象
-            val message = Message.from(json) ?: return
-            val from = message.from
-            
-            // 处理连接打开消息
-            if (message.open != null) {
-                // 检查是否已存在相同 ID 的连接
-                if (connections.containsKey(from)) {
-                    return
-                }
-                
-                // 提取连接元数据
-                val attributes = message.open.param as? Map<*, *>
-                @Suppress("UNCHECKED_CAST")
-                val attributesMap = attributes?.mapKeys { it.key.toString() } as? Map<String, Any>
-                
-                // 创建新的 Connection 实例
-                // 注入消息发送函数，封装了消息序列化和 JavaScript 执行逻辑
-                val currentUrl = webViewRef.get()?.url
-                val connection = ConnectionImpl(from, attributesMap, currentUrl) { messageToSend ->
-                    try {
-                        // 构造发送到 Web 端的消息数组
-                        val jsonArray = JSONArray()
-                        jsonArray.put(messageToSend.toJson())
-                        val jsonString = jsonArray.toString()
-                        
-                        // 重置保活
-                        javaScriptAliveKeeper.delay()
-                        
-                        // 构造 JavaScript 代码调用 Web 端的 receive 方法
-                        val js = "window.__web_webnat__.receive(...$jsonString)"
-                        
-                        // 在主线程执行 JavaScript
-                        webViewRef.get()?.post {
-                            webViewRef.get()?.evaluateJavascript(js, null)
-                        }
-                    } catch (error: Exception) {
-                        // 忽略发送错误
+        val webView = webViewRef.get() ?: return
+        // postMessage 由 JS 线程调用，WebView 仅可在主线程访问，故整段逻辑投递到主线程执行
+        webView.post {
+            try {
+                // 解析 JSON 字符串
+                val json = JSONObject(messageText)
+                val message = Message.from(json) ?: return@post
+                val from = message.from
+
+                // 处理连接打开消息
+                if (message.open != null) {
+                    if (connections.containsKey(from)) return@post
+
+                    val attributes = message.open.param as? Map<*, *>
+                    @Suppress("UNCHECKED_CAST")
+                    val attributesMap = attributes?.mapKeys { it.key.toString() } as? Map<String, Any>
+
+                    // 主线程中获取当前 URL，保证 WebView.url 访问安全
+                    val currentUrl = webView.url
+                    val connection = ConnectionImpl(from, attributesMap, currentUrl) { messageToSend ->
+                        try {
+                            javaScriptAliveKeeper.delay()
+                            val jsonArray = JSONArray()
+                            jsonArray.put(messageToSend.toJson())
+                            val js = "window.__web_webnat__.receive(...${jsonArray.toString()})"
+                            // 发送时也必须在主线程执行 evaluateJavascript
+                            webViewRef.get()?.post {
+                                webViewRef.get()?.evaluateJavascript(js, null)
+                            }
+                        } catch (_: Exception) { }
                     }
+                    onConnectionOpen(connection)
+                    return@post
                 }
-                
-                // 保存连接并通知所有代理
-                onConnectionOpen(connection)
-                return
-            }
-            
-            // 处理连接关闭消息
-            if (message.close != null) {
-                val connection = connections.remove(from) ?: return
-                
-                // 标记连接为已关闭并通知所有代理
-                (connection as? ConnectionImpl)?.closed = true
-                onConnectionClose(connection)
-                return
-            }
-            
-            // 处理其他消息类型（raw, broadcast, invoke, reply, notify, abort）
-            val connection = connections[from] ?: return
-            onConnectionReceive(connection, message)
-        } catch (_: Exception) {
-            // 解析失败，忽略消息
+
+                if (message.close != null) {
+                    val connection = connections.remove(from) ?: return@post
+                    (connection as? ConnectionImpl)?.closed = true
+                    onConnectionClose(connection)
+                    return@post
+                }
+
+                val connection = connections[from] ?: return@post
+                onConnectionReceive(connection, message)
+            } catch (_: Exception) { }
         }
     }
     
