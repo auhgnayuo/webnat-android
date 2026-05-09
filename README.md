@@ -33,7 +33,7 @@ Webnat requires a Web-side implementation and also supports other Native platfor
 | Platform | Repository |
 |----------|------------|
 | Web (JavaScript/TypeScript) | [webnat-web](https://github.com/auhgnayuo/webnat-web) |
-| iOS / macOS (Swift) | [webnat-os](https://github.com/auhgnayuo/webnat-os) |
+| iOS / macOS (Swift) | [webnat-darwin](https://github.com/auhgnayuo/webnat-darwin) |
 | HarmonyOS (ArkTS) | [webnat-ohos](https://github.com/auhgnayuo/webnat-ohos) |
 
 ## Usage
@@ -124,3 +124,8 @@ webnat.onMethod("getUserInfo") { param, callback, notify, connection ->
 ## License
 
 This project is licensed under the MIT License.
+
+## Testing
+
+- Local JVM unit tests: `./gradlew :mylibrary:testDebugUnitTest`
+- Android instrumented tests (includes Message/Method lifecycle cases): `./gradlew :mylibrary:connectedDebugAndroidTest`

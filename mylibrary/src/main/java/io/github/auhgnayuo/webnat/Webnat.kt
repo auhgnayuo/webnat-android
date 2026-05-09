@@ -218,8 +218,15 @@ class Webnat private constructor(webView: WebView) {
      */
     @Suppress("unused")
     fun broadcast(name: String, param: Any? = null, connection: Connection? = null) {
-        val c = connection ?: connections.values.firstOrNull()
-        broadcastWebnat.broadcast(name, param, c)
+        if (connection != null) {
+            broadcastWebnat.broadcast(name, param, connection)
+            return
+        }
+        // 先快照再遍历，避免回调触发连接变更时影响当前迭代。
+        val snapshot = connections.values.toList()
+        snapshot.forEach { c ->
+            broadcastWebnat.broadcast(name, param, c)
+        }
     }
     
     // MARK: - 方法调用 API
@@ -301,7 +308,7 @@ class Webnat private constructor(webView: WebView) {
      * @param param 方法参数，可以是任意可序列化的对象，可选
      * @param timeout 超时时间（毫秒），如果为 `null` 则永不超时。超时后会自动取消调用并抛出超时错误
      * @param onNotification 接收到途中的通知时回调，用于接收方法执行过程中的进度或状态更新
-     * @param connection 目标连接，如果为 `null` 则抛出连接关闭错误
+     * @param connection 目标连接，如果为 `null` 则选择第一个可用连接（与回调版本一致）
      * @return 方法执行结果，可以是任意可序列化的对象，可选
      * @throws WebnatError 方法执行错误，包括：
      *   - 超时错误（`WebnatErrorCode.TIMEOUT`）
@@ -318,7 +325,14 @@ class Webnat private constructor(webView: WebView) {
         onNotification: MethodOnNotification? = null,
         connection: Connection? = null
     ): Any? {
-        return methodWebnat.method(method, param, timeout, onNotification, connection)
+        val c = connection ?: connections.values.firstOrNull()
+        // 与回调版本保持一致，在方法调用期间增加保活引用。
+        javaScriptAliveKeeper.increaseReference()
+        return try {
+            methodWebnat.method(method, param, timeout, onNotification, c)
+        } finally {
+            javaScriptAliveKeeper.decreaseReference()
+        }
     }
     /**
      * 通知所有代理：连接已打开

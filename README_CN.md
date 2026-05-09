@@ -31,7 +31,7 @@ Webnat 需要配合 Web 端实现使用，同时也支持其他 Native 平台：
 | 平台 | 仓库 |
 |------|------|
 | Web (JavaScript/TypeScript) | [webnat-web](https://github.com/auhgnayuo/webnat-web) |
-| iOS / macOS (Swift) | [webnat-os](https://github.com/auhgnayuo/webnat-os) |
+| iOS / macOS (Swift) | [webnat-darwin](https://github.com/auhgnayuo/webnat-darwin) |
 | HarmonyOS (ArkTS) | [webnat-ohos](https://github.com/auhgnayuo/webnat-ohos) |
 
 ## 基本使用
@@ -144,3 +144,8 @@ webnat.onMethod("getUserInfo") { param, callback, notify, connection ->
 ## 协议
 
 本项目采用 MIT 协议开源。
+
+## 测试
+
+- 本地 JVM 单元测试：`./gradlew :mylibrary:testDebugUnitTest`
+- Android 仪器测试（包含 Message / Method 生命周期用例）：`./gradlew :mylibrary:connectedDebugAndroidTest`
