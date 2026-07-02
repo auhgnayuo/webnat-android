@@ -5,11 +5,14 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Webnat - Native 与 Web 之间的双向通信框架
@@ -269,7 +272,9 @@ class Webnat private constructor(webView: WebView) {
      * @param timeout 超时时间（毫秒），超时后会自动取消调用并抛出超时错误
      * @param onNotification 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
      * @param callback 完成回调，接收方法执行结果或错误
-     * @param connection 目标连接，如果为 null 则选择第一个可用连接
+     * @param connection 目标连接。传入具体连接时只调用该连接；为 null 时**广播**给当前所有连接
+     *   （主框架 + 所有 iframe），并按「谁先返回用谁的」裁决：第一个发来 notify / 成功 / 真实业务错误的
+     *   连接获胜，其余被 abort；仅回 unimplemented/closed 的连接不参与获胜，全部如此时才失败
      * @return 取消函数，调用此函数可以主动取消正在执行的方法调用
      */
     @Suppress("unused")
@@ -281,14 +286,23 @@ class Webnat private constructor(webView: WebView) {
         callback: MethodCallback? = null,
         connection: Connection? = null
     ): MethodCancellation {
-        val c = connection ?: connections.values.firstOrNull()
         // 在方法调用期间增加引用，确保 JS 保持活跃
         javaScriptAliveKeeper.increaseReference()
-        return methodWebnat.method(method, param, timeout, onNotification, { result, error ->
-            callback?.invoke(result, error)
-            // 方法调用完成后减少引用
+
+        // 指定了连接：沿用单连接直连语义
+        if (connection != null) {
+            return methodWebnat.method(method, param, timeout, onNotification, { result, error ->
+                callback?.invoke(result, error)
+                // 方法调用完成后减少引用
+                javaScriptAliveKeeper.decreaseReference()
+            }, connection)
+        }
+
+        // 未指定连接：广播给所有连接（主框架 + 所有 iframe），谁先返回用谁的
+        val call = BroadcastMethodCall(method, onNotification, callback) {
             javaScriptAliveKeeper.decreaseReference()
-        }, c)
+        }
+        return call.start(connections.values.toList(), methodWebnat, param, timeout)
     }
 
     /**
@@ -304,11 +318,15 @@ class Webnat private constructor(webView: WebView) {
      * 5. 等待结果、超时或被取消
      * 6. 清理回调和定时任务
      *
+     * > 未指定 connection（广播）时，上述流程会对每个连接各执行一次，并按「谁先返回用谁的」
+     * > 竞赛裁决，详见下方 connection 参数说明。
+     *
      * @param method 要调用的方法名称
      * @param param 方法参数，可以是任意可序列化的对象，可选
      * @param timeout 超时时间（毫秒），如果为 `null` 则永不超时。超时后会自动取消调用并抛出超时错误
      * @param onNotification 接收到途中的通知时回调，用于接收方法执行过程中的进度或状态更新
-     * @param connection 目标连接，如果为 `null` 则选择第一个可用连接（与回调版本一致）
+     * @param connection 目标连接。传入具体连接时只调用该连接；为 `null` 时**广播**给当前所有连接
+     *   （主框架 + 所有 iframe），并按「谁先返回用谁的」裁决（详见回调版说明）
      * @return 方法执行结果，可以是任意可序列化的对象，可选
      * @throws WebnatError 方法执行错误，包括：
      *   - 超时错误（`WebnatErrorCode.TIMEOUT`）
@@ -325,13 +343,36 @@ class Webnat private constructor(webView: WebView) {
         onNotification: MethodOnNotification? = null,
         connection: Connection? = null
     ): Any? {
-        val c = connection ?: connections.values.firstOrNull()
-        // 与回调版本保持一致，在方法调用期间增加保活引用。
-        javaScriptAliveKeeper.increaseReference()
-        return try {
-            methodWebnat.method(method, param, timeout, onNotification, c)
-        } finally {
-            javaScriptAliveKeeper.decreaseReference()
+        // 指定了连接：沿用单连接直连语义
+        if (connection != null) {
+            // 与回调版本保持一致，在方法调用期间增加保活引用。
+            javaScriptAliveKeeper.increaseReference()
+            return try {
+                methodWebnat.method(method, param, timeout, onNotification, connection)
+            } finally {
+                javaScriptAliveKeeper.decreaseReference()
+            }
+        }
+
+        // 未指定连接：广播竞赛。复用回调版（其内部已处理 JS 保活与竞赛裁决）
+        return suspendCancellableCoroutine { continuation ->
+            val cancel = method(
+                method = method,
+                param = param,
+                timeout = timeout,
+                onNotification = onNotification,
+                callback = { result, error ->
+                    if (error != null) {
+                        continuation.resumeWithException(error)
+                    } else {
+                        continuation.resume(result)
+                    }
+                },
+                connection = null
+            )
+            continuation.invokeOnCancellation {
+                cancel.invoke()
+            }
         }
     }
     /**

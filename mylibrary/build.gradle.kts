@@ -43,7 +43,7 @@ dependencies {
 }
 
 mavenPublishing {
-    coordinates("io.github.auhgnayuo", "webnat", "1.0.3")
+    coordinates("io.github.auhgnayuo", "webnat", "1.2.0")
 
     pom {
         name.set("Webnat")
