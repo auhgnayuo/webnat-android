@@ -428,7 +428,7 @@ internal class MethodWebnat {
                     clean()
                     val replyMessage = if (error != null) {
                         // 有错误，发送错误响应
-                        val errorJson = (error as? WebnatError)?.toJson() ?: WebnatError.from(error)?.toJson()
+                        val errorJson = WebnatError.from(error)?.toJson()
                         Message.reply(connection.id, id, error = errorJson)
                     } else {
                         // 成功，发送结果响应

@@ -92,7 +92,8 @@ class WebnatError(
          * 此方法用于将从 JavaScript 端接收到的错误对象转换为 WebnatError
          *
          * 支持的输入格式：
-         * 1. 对象格式：{ "code": number, "message": string } 或其它系统常见字段命名（区分大小写，不同风格均支持）
+         * 1. [JSONObject] / [Map]：{ "code": number, "message": string } 或其它系统常见字段命名
+         *    （区分大小写，不同风格均支持）
          * 2. 其他类型：将对象描述作为错误消息
          * 
          * @param error 任意异常对象
@@ -108,32 +109,54 @@ class WebnatError(
             }
             
             if (error is JSONObject) {
-                val code = when {
-                    error.has("code") -> error.optInt("code", WebnatErrorCode.UNKNOWN)
-                    error.has("errcode") -> error.optInt("errcode", WebnatErrorCode.UNKNOWN)
-                    error.has("errCode") -> error.optInt("errCode", WebnatErrorCode.UNKNOWN)
-                    error.has("errorcode") -> error.optInt("errorcode", WebnatErrorCode.UNKNOWN)
-                    error.has("errorCode") -> error.optInt("errorCode", WebnatErrorCode.UNKNOWN)
-                    else -> WebnatErrorCode.UNKNOWN
-                }
-                
-                val message = when {
-                    error.has("message") -> error.optString("message", "Unknown Error")
-                    error.has("msg") -> error.optString("msg", "Unknown Error")
-                    error.has("errmsg") -> error.optString("errmsg", "Unknown Error")
-                    error.has("errMsg") -> error.optString("errMsg", "Unknown Error")
-                    error.has("errormsg") -> error.optString("errormsg", "Unknown Error")
-                    error.has("errorMsg") -> error.optString("errorMsg", "Unknown Error")
-                    error.has("errormessage") -> error.optString("errormessage", "Unknown Error")
-                    error.has("errorMessage") -> error.optString("errorMessage", "Unknown Error")
-                    else -> "Unknown Error"
-                }
-                
-                return WebnatError(code, message)
+                return fromFields(error::has, error::opt)
+            }
+
+            if (error is Map<*, *>) {
+                return fromFields(error::containsKey) { error[it] }
             }
             
             return WebnatError(WebnatErrorCode.UNKNOWN, error.toString())
         }
+
+        private fun fromFields(
+            contains: (String) -> Boolean,
+            value: (String) -> Any?,
+        ): WebnatError {
+            val codeKey = codeKeys.firstOrNull(contains)
+            val code = codeKey?.let { value(it).toErrorCode() } ?: WebnatErrorCode.UNKNOWN
+            val messageKey = messageKeys.firstOrNull(contains)
+            val message = messageKey?.let { value(it).toErrorMessage() } ?: "Unknown Error"
+            return WebnatError(code, message)
+        }
+
+        private fun Any?.toErrorCode(): Int = when (this) {
+            is Number -> toInt()
+            is String -> toIntOrNull() ?: WebnatErrorCode.UNKNOWN
+            else -> WebnatErrorCode.UNKNOWN
+        }
+
+        private fun Any?.toErrorMessage(): String =
+            if (this == null || this == JSONObject.NULL) "Unknown Error" else toString()
+
+        private val codeKeys = listOf(
+            "code",
+            "errcode",
+            "errCode",
+            "errorcode",
+            "errorCode",
+        )
+
+        private val messageKeys = listOf(
+            "message",
+            "msg",
+            "errmsg",
+            "errMsg",
+            "errormsg",
+            "errorMsg",
+            "errormessage",
+            "errorMessage",
+        )
         
         /**
          * 构造未知错误

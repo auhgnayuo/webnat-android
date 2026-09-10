@@ -22,7 +22,7 @@ Add to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.auhgnayuo:webnat:1.2.0")
+    implementation("io.github.auhgnayuo:webnat:1.2.1")
 }
 ```
 

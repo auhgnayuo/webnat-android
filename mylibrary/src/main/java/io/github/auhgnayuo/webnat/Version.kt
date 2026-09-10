@@ -1,3 +1,3 @@
 package io.github.auhgnayuo.webnat
 
-const val WebnatVersion = "1.2.0"
+const val WebnatVersion = "1.2.1"

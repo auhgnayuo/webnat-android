@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-10
+
+### Added
+
+- `WebnatError.from` now accepts Kotlin `Map` error objects and recognizes the same code/message field aliases as `JSONObject`.
+- Native method replies now serialize errors only through `WebnatError.from`; the extra `WebnatError` cast was redundant.
+
 ## [1.2.0] - 2026-07-02
 
 ### Added
