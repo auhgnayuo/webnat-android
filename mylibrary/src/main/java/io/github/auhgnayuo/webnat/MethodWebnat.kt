@@ -110,6 +110,9 @@ internal class MethodWebnat {
      * value: 取消函数，收到取消请求时执行
      */
     private val aborts = ConcurrentHashMap<String, () -> Unit>()
+
+    /** 是否还留有处理端的取消 / 关闭钩子（仅供测试验证没有泄漏） */
+    internal fun hasPendingHooks(): Boolean = aborts.isNotEmpty() || onCloses.isNotEmpty()
     
     /**
      * 注册方法处理器
@@ -434,15 +437,33 @@ internal class MethodWebnat {
                         // 成功，发送结果响应
                         Message.reply(connection.id, id, result = result)
                     }
-                    (connection as? ConnectionImpl)?.trySend(replyMessage)
+                    val conn = connection as? ConnectionImpl
+                    try {
+                        conn?.send(replyMessage)
+                    } catch (e: WebnatError) {
+                        // 结果无法序列化时回复错误，否则调用方只能等到超时；其他发送失败保持静默
+                        if (error == null && e.code == WebnatErrorCode.SERIALIZATION_FAILED) {
+                            conn?.trySend(Message.reply(connection.id, id, error = e.toJson()))
+                        }
+                    } catch (_: Exception) {
+                    }
                 }
             }
             
             @Suppress("UNCHECKED_CAST")
             val methodListener = listener.value as? MethodListener
             if (methodListener != null) {
-                // 调用方法监听器，返回取消此次调用的 cancel 函数
-                val abort = methodListener(param, complete, notify, connection)
+                // 调用方法监听器，返回取消此次调用的 cancel 函数；监听器抛出的异常按错误回复，不让调用方等到超时
+                val abort = try {
+                    methodListener(param, complete, notify, connection)
+                } catch (e: Exception) {
+                    complete(null, e)
+                    return
+                }
+                // 监听器已同步完成：不再注册取消 / 关闭钩子，否则它们永远不会被清理
+                if (isCompleted) {
+                    return
+                }
                 
                 // 注册取消函数（收到取消请求时会触发此函数，进行清理和调用用户的 abort 逻辑）
                 aborts[id] = {

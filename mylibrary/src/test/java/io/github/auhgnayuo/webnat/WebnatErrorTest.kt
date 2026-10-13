@@ -50,4 +50,18 @@ class WebnatErrorTest {
 
         assertSame(expected, WebnatError.from(expected))
     }
+
+    @Test
+    fun fromThrowableUsesItsMessageWithoutTheClassName() {
+        val error = WebnatError.from(IllegalStateException("boom"))
+
+        assertEquals(WebnatErrorCode.UNKNOWN, error?.code)
+        assertEquals("boom", error?.message)
+    }
+
+    @Test
+    fun fromThrowableWithoutMessageFallsBackToUnknownError() {
+        assertEquals("Unknown Error", WebnatError.from(RuntimeException())?.message)
+        assertEquals("Unknown Error", WebnatError.from(RuntimeException(""))?.message)
+    }
 }

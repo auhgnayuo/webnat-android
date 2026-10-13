@@ -22,7 +22,7 @@ Add to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.auhgnayuo:webnat:1.2.1")
+    implementation("io.github.auhgnayuo:webnat:1.4.0")
 }
 ```
 
@@ -117,6 +117,25 @@ webnat.onMethod("getUserInfo") { param, callback, notify, connection ->
 
     return@onMethod {
         // Cancellation logic
+    }
+}
+```
+
+### 4. Send failures and handler errors
+
+- A failed send is visible to the caller that waits for it: `method` fails at once with `SERIALIZATION_FAILED` when the parameter cannot be serialized (for example `NaN` or `Infinity`), and with `CLOSED` when the `WebView` is gone or the connection is closed. `raw` and `broadcast` stay fire-and-forget.
+- A method handler that fails (the handler throws, or calls `callback(null, error)`) is answered with an error reply `{ code, message }`, so the caller never waits for its timeout because of a handler bug. A result that cannot be serialized is answered with `SERIALIZATION_FAILED`.
+- Android only: a script failure inside the page cannot be observed (`evaluateJavascript` has no error channel); such a call still ends by timeout, abort or CLOSE.
+
+### 5. Page crash and teardown
+
+When a page unloads normally, the Web SDK sends CLOSE and Webnat ends that connection. A crashed render process or a destroyed `WebView` never gets to send it, so forward the event to Webnat: call `Webnat.of(view).onRenderProcessGone()` from your `WebViewClient.onRenderProcessGone`, and once more before you destroy the `WebView`. Webnat then ends the page's connections itself: pending `method` calls fail with `CLOSED` and running method handlers are cancelled. Nothing is sent to the page, and Webnat stays usable, so a reloaded page opens new connections as usual. It can be called from any thread, and page scripts cannot call it.
+
+```kotlin
+webView.webViewClient = object : WebViewClient() {
+    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        Webnat.of(view).onRenderProcessGone()
+        return true
     }
 }
 ```

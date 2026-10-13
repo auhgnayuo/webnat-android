@@ -94,7 +94,8 @@ class WebnatError(
          * 支持的输入格式：
          * 1. [JSONObject] / [Map]：{ "code": number, "message": string } 或其它系统常见字段命名
          *    （区分大小写，不同风格均支持）
-         * 2. 其他类型：将对象描述作为错误消息
+         * 2. [Throwable]：取其 `message` 作为错误消息（没有则为 "Unknown Error"），与其他平台对 `Error` 的处理一致
+         * 3. 其他类型：将对象描述作为错误消息
          * 
          * @param error 任意异常对象
          * @return WebnatError 实例，如果 error 为 null 则返回 null
@@ -116,6 +117,10 @@ class WebnatError(
                 return fromFields(error::containsKey) { error[it] }
             }
             
+            if (error is Throwable) {
+                return WebnatError(WebnatErrorCode.UNKNOWN, error.message?.takeIf { it.isNotEmpty() } ?: "Unknown Error")
+            }
+
             return WebnatError(WebnatErrorCode.UNKNOWN, error.toString())
         }
 

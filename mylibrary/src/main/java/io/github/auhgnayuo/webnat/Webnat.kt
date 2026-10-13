@@ -1,6 +1,8 @@
 package io.github.auhgnayuo.webnat
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import kotlinx.coroutines.flow.Flow
@@ -124,6 +126,43 @@ class Webnat private constructor(webView: WebView) {
     @Suppress("unused")
     fun getConnections(): Map<String, Connection> {
         return connections.toMap()
+    }
+
+    /**
+     * 渲染进程已退出
+     *
+     * 宿主在 `WebViewClient.onRenderProcessGone` 触发时调用；销毁 WebView 之前（如 `Activity.onDestroy`）也调用一次。
+     * 页面崩溃或被销毁时无法再发送 CLOSE，Webnat 据此自行结束该页面的所有连接：待完成的 `method` 调用
+     * 以 `CLOSED` 失败，正在执行的 method handler 收到取消。不会向页面发送任何消息，Webnat 仍可继续使用，
+     * 页面重新加载后会照常建立新连接。可重复调用，可在任意线程调用（内部切换到主线程）。
+     *
+     * 注意：它不是 `@JavascriptInterface`，页面脚本无法调用。
+     *
+     * ```kotlin
+     * webView.webViewClient = object : WebViewClient() {
+     *     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+     *         Webnat.of(view).onRenderProcessGone()
+     *         return true
+     *     }
+     * }
+     * ```
+     */
+    @Suppress("unused")
+    fun onRenderProcessGone() {
+        // 不用 WebView.post：已脱离窗口或已销毁的 WebView 可能永远不执行投递的任务
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            closeAllConnections()
+        } else {
+            Handler(Looper.getMainLooper()).post { closeAllConnections() }
+        }
+    }
+
+    private fun closeAllConnections() {
+        // 先把所有连接标记并移除，再逐个通知：回调里看到的是已经全部关闭的状态
+        val closing = connections.values.toList()
+        connections.clear()
+        closing.forEach { (it as? ConnectionImpl)?.closed = true }
+        closing.forEach { onConnectionClose(it) }
     }
     
     // MARK: - 原始消息 API
@@ -457,16 +496,22 @@ class Webnat private constructor(webView: WebView) {
                     // 主线程中获取当前 URL，保证 WebView.url 访问安全
                     val currentUrl = webView.url
                     val connection = ConnectionImpl(from, attributesMap, currentUrl) { messageToSend ->
-                        try {
-                            javaScriptAliveKeeper.delay()
+                        // WebView 已被回收：无法发送，让等待它的 method() 立即失败
+                        val target = webViewRef.get() ?: throw WebnatError.closed()
+                        val js = try {
                             val jsonArray = JSONArray()
                             jsonArray.put(messageToSend.toJson())
-                            val js = "window.__web_webnat__.receive(...${jsonArray.toString()})"
-                            // 发送时也必须在主线程执行 evaluateJavascript
-                            webViewRef.get()?.post {
-                                webViewRef.get()?.evaluateJavascript(js, null)
-                            }
-                        } catch (_: Exception) { }
+                            "window.__web_webnat__.receive(...${jsonArray.toString()})"
+                        } catch (e: Exception) {
+                            // 参数无法序列化（如 NaN / Infinity）
+                            throw WebnatError.serializationFailed(e)
+                        }
+                        javaScriptAliveKeeper.delay()
+                        // 发送时也必须在主线程执行 evaluateJavascript
+                        // 注意：evaluateJavascript 没有错误通道，页面内脚本的失败无法观察
+                        if (!target.post { target.evaluateJavascript(js, null) }) {
+                            throw WebnatError.closed()
+                        }
                     }
                     onConnectionOpen(connection)
                     return@post

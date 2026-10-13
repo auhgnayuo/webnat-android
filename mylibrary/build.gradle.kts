@@ -27,6 +27,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    testOptions {
+        // JVM unit tests: android.* calls (Handler, Looper, ...) return defaults instead of throwing "not mocked"
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
@@ -39,11 +43,13 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    // android.jar only has stubs for org.json; JVM unit tests need the real implementation to assert message contents
+    testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.junit)
 }
 
 mavenPublishing {
-    coordinates("io.github.auhgnayuo", "webnat", "1.2.1")
+    coordinates("io.github.auhgnayuo", "webnat", "1.4.0")
 
     pom {
         name.set("Webnat")

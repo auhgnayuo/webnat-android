@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-13
+
+### Added
+
+- **`onRenderProcessGone()`**: tells Webnat that the render process behind the `WebView` has exited (crash, or the `WebView` is about to be destroyed); Webnat then ends the page's connections itself. Same semantics on Android, Darwin, OHOS and Electron. The method is named after each platform's own hook: `webViewWebContentProcessDidTerminate` on Darwin, `onRenderProcessGone` on Android and Electron, `onRenderExited` on OHOS. The host calls it from its own `WebViewClient.onRenderProcessGone` and before it destroys the `WebView`. It is not a `@JavascriptInterface`, so page scripts cannot call it.
+
+### Fixed
+
+- A method handler that throws now makes the caller receive an error reply instead of waiting for its timeout (the exception used to be swallowed by the outermost `catch`).
+- A failed send is no longer swallowed: `method` fails at once with `SERIALIZATION_FAILED` when the parameter cannot be serialized (JSON rejects `NaN` / `Infinity`) and with `CLOSED` when the `WebView` has been recycled or can no longer run posted work. A script failure inside the page is still not observable (`evaluateJavascript` has no error channel).
+- A method result that cannot be serialized is answered with a `SERIALIZATION_FAILED` error reply instead of being dropped.
+- A method handler that completes synchronously no longer leaves its cancel / close hooks registered forever.
+
+### Changed
+
+- `WebnatError.from(Throwable)` now uses the exception's `message` ("Unknown Error" when it has none) instead of `toString()`, so a plain exception reaches the peer as `boom` rather than `java.lang.IllegalStateException: boom`, as on the other platforms.
+
+### Tests
+
+- JVM unit tests now run `android.os` calls as stubs returning defaults (`unitTests.isReturnDefaultValues`) and use the real `org.json` implementation (`testImplementation`), because the `android.jar` one only has stubs.
+
 ## [1.2.1] - 2026-09-10
 
 ### Added

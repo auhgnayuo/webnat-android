@@ -20,7 +20,7 @@ Webnat 是一个用于 Native (Android) 与 Web 之间通信的 Kotlin 库。支
 
 ```kotlin
 dependencies {
-    implementation("io.github.auhgnayuo:webnat:1.2.1")
+    implementation("io.github.auhgnayuo:webnat:1.4.0")
 }
 ```
 
@@ -137,6 +137,25 @@ webnat.onMethod("getUserInfo") { param, callback, notify, connection ->
 
     return@onMethod {
         // 取消操作的逻辑
+    }
+}
+```
+
+### 4. 发送失败与 handler 错误
+
+- 发送失败会让等待它的调用方知道：参数无法序列化时（例如 `NaN`、`Infinity`），`method` 立即以 `SERIALIZATION_FAILED` 失败；`WebView` 已不存在或连接已关闭时以 `CLOSED` 失败。`raw`、`broadcast` 仍是发出即忘。
+- method handler 失败（handler 抛出异常，或调用 `callback(null, error)`）时，对端会收到错误回复 `{ code, message }`，不会因 handler 的 bug 一直等到超时。结果无法序列化时，回复 `SERIALIZATION_FAILED`。
+- 仅 Android：页面内脚本执行失败无法观察（`evaluateJavascript` 没有错误通道），这样的调用仍以超时、取消或 CLOSE 结束。
+
+### 5. 页面崩溃与销毁
+
+页面正常卸载时，Web SDK 会发送 CLOSE，Webnat 随之结束该连接。渲染进程崩溃或 `WebView` 被销毁时页面没有机会发送，请把事件转给 Webnat：在你的 `WebViewClient.onRenderProcessGone` 里调用 `Webnat.of(view).onRenderProcessGone()`，销毁 `WebView` 之前也调用一次。Webnat 会自行结束该页面的所有连接：待完成的 `method` 调用以 `CLOSED` 失败，正在执行的 method handler 收到取消。不会向页面发送任何消息，Webnat 仍可继续使用，页面重新加载后会照常建立新连接。可在任意线程调用，页面脚本无法调用它。
+
+```kotlin
+webView.webViewClient = object : WebViewClient() {
+    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        Webnat.of(view).onRenderProcessGone()
+        return true
     }
 }
 ```
